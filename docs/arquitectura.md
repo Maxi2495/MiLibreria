@@ -315,3 +315,599 @@ Con el objetivo de mantener un alcance viable para la primera versión de BookNe
 - Los valores que puedan obtenerse mediante cálculos, como el promedio de calificaciones, la duración de una Lectura o la ocupación de un Estante, se calcularán a partir de los datos existentes siempre que resulte conveniente, evitando información redundante.
 - Las notificaciones automáticas por correo electrónico, incluyendo recordatorios de préstamos vencidos, quedarán contempladas como una mejora futura.
 - Las funcionalidades futuras podrán incorporarse de forma progresiva aprovechando la separación por módulos y capas definida para el sistema.
+
+## 8. Modelo de datos
+
+BookNest utilizará una base de datos relacional MySQL para almacenar de forma persistente la información del sistema. El modelo de datos fue diseñado a partir de los módulos y reglas de negocio definidos para el MVP, buscando mantener la integridad de la información, reducir la redundancia y representar correctamente las relaciones entre las distintas entidades.
+
+Una de las principales decisiones del modelo consiste en diferenciar Libro de Ejemplar. Libro representará la información bibliográfica correspondiente a una edición, mientras que Ejemplar representará una copia física concreta perteneciente a un usuario. De esta manera, diferentes usuarios o incluso un mismo usuario podrán poseer distintos ejemplares asociados a una misma edición bibliográfica.
+
+El modelo también contemplará autores, géneros, editoriales, sagas, bibliotecas físicas, estantes, lecturas, préstamos, anotaciones y elementos de la lista de deseos.
+
+Las relaciones entre las entidades se implementarán mediante claves primarias y foráneas. En los casos donde exista una relación muchos a muchos se utilizarán tablas asociativas para mantener un modelo relacional normalizado.
+
+## 9. Entidades principales
+
+### 9.1. Usuario
+
+Representa a una persona registrada en BookNest. Cada usuario administrará de manera independiente su colección, bibliotecas, ejemplares, wishlist y anotaciones.
+
+Sus principales atributos serán:
+
+- `id`: identificador único del usuario.
+- `nombre`: nombre del usuario.
+- `apellido`: apellido del usuario.
+- `email`: correo electrónico utilizado para iniciar sesión. Deberá ser único.
+- `password_hash`: contraseña almacenada mediante un mecanismo seguro de hash.
+- `fecha_registro`: fecha de creación de la cuenta.
+- `estado`: indica si la cuenta se encuentra ACTIVA o INACTIVA.
+
+La eliminación de una cuenta se manejará mediante baja lógica, por lo que el registro no será eliminado físicamente de la base de datos.
+
+### 9.2. Libro
+
+Representa la información bibliográfica correspondiente a una edición de un libro. No representa una copia física particular perteneciente a un usuario.
+
+Sus principales atributos serán:
+
+- `id`: identificador único del libro.
+- `titulo`: título de la obra.
+- `isbn`: ISBN correspondiente a la edición. Será opcional para permitir cargas manuales cuando el usuario no disponga de este dato.
+- `fecha_publicacion`: fecha de publicación de la edición, cuando se encuentre disponible.
+- `sinopsis`: descripción o resumen del libro.
+- `portada_url`: referencia a la imagen utilizada como portada.
+- `editorial_id`: referencia opcional a la editorial correspondiente.
+- `saga_id`: referencia opcional a una saga o serie.
+- `posicion_saga`: posición del libro dentro de la saga, cuando corresponda.
+
+Un Libro podrá tener múltiples autores y múltiples géneros. Estas relaciones se representarán mediante las tablas asociativas `LibroAutor` y `LibroGenero`.
+
+### 9.3. Autor
+
+Representa a un autor asociado a uno o varios libros.
+
+Sus principales atributos serán:
+
+- `id`: identificador único del autor.
+- `nombre`: nombre del autor.
+
+La relación entre Libro y Autor será de muchos a muchos, ya que un libro puede tener varios autores y un mismo autor puede participar en varios libros.
+
+### 9.4. LibroAutor
+
+Será la entidad asociativa utilizada para representar la relación muchos a muchos entre Libro y Autor.
+
+Sus atributos serán:
+
+- `libro_id`: referencia al Libro.
+- `autor_id`: referencia al Autor.
+
+La combinación de ambos identificadores será única, evitando registrar dos veces al mismo autor para un mismo libro.
+
+### 9.5. Genero
+
+Representa los géneros mediante los cuales pueden clasificarse los libros.
+
+Sus principales atributos serán:
+
+- `id`: identificador único del género.
+- `nombre`: nombre del género.
+
+Un Libro podrá pertenecer a varios géneros y un mismo género podrá contener múltiples libros.
+
+### 9.6. LibroGenero
+
+Será la entidad asociativa utilizada para representar la relación muchos a muchos entre Libro y Genero.
+
+Sus atributos serán:
+
+- `libro_id`: referencia al Libro.
+- `genero_id`: referencia al Genero.
+
+La combinación de ambos identificadores será única para evitar asociaciones duplicadas.
+
+### 9.7. Editorial
+
+Representa una editorial responsable de la publicación de una o varias ediciones bibliográficas.
+
+Sus principales atributos serán:
+
+- `id`: identificador único de la editorial.
+- `nombre`: nombre de la editorial.
+
+Una Editorial podrá estar asociada a múltiples Libros. La asociación de un Libro con una Editorial será opcional.
+
+### 9.8. Saga
+
+Representa una saga o serie a la cual pueden pertenecer diferentes libros.
+
+Sus principales atributos serán:
+
+- `id`: identificador único de la saga.
+- `nombre`: nombre de la saga.
+
+Una Saga podrá contener múltiples Libros. La pertenencia de un Libro a una Saga será opcional y, cuando corresponda, el Libro podrá registrar su posición dentro de ella.
+
+### 9.9. Ejemplar
+
+Representa una copia física concreta de un Libro perteneciente a un usuario.
+
+Sus principales atributos serán:
+
+- `id`: identificador único del ejemplar.
+- `usuario_id`: referencia al usuario propietario.
+- `libro_id`: referencia al Libro correspondiente.
+- `estante_id`: referencia opcional al Estante donde se encuentra ubicado.
+- `fecha_adquisicion`: fecha opcional en la que fue adquirido.
+- `estado_fisico`: estado de conservación del ejemplar.
+- `precio_compra`: precio de adquisición, cuando el usuario desee registrarlo.
+- `moneda`: moneda correspondiente al precio de compra.
+- `observacion`: observación opcional relacionada con la copia física.
+- `activo`: indica si el ejemplar se encuentra activo o fue dado de baja lógicamente.
+
+Los posibles estados físicos serán NUEVO, MUY_BUENO, BUENO, REGULAR y DETERIORADO.
+
+Un mismo Libro podrá estar asociado a múltiples Ejemplares. Esto permitirá que un usuario pueda poseer más de una copia física correspondiente a la misma edición o ISBN.
+
+La ubicación física será opcional, por lo que `estante_id` podrá permanecer sin valor cuando el Ejemplar se encuentre sin ubicación asignada.
+
+### 9.10. Biblioteca
+
+Representa un espacio físico de almacenamiento creado por un usuario para organizar sus libros.
+
+Sus principales atributos serán:
+
+- `id`: identificador único de la biblioteca.
+- `usuario_id`: referencia al usuario propietario.
+- `nombre`: nombre asignado por el usuario.
+
+Un usuario podrá crear múltiples Bibliotecas. El nombre de una Biblioteca deberá ser único dentro de la cuenta de cada usuario.
+
+### 9.11. Estante
+
+Representa una división física dentro de una Biblioteca.
+
+Sus principales atributos serán:
+
+- `id`: identificador único del estante.
+- `biblioteca_id`: referencia a la Biblioteca a la cual pertenece.
+- `nombre`: nombre asignado al estante.
+- `capacidad`: cantidad máxima de Ejemplares que pueden encontrarse físicamente en él.
+
+Una Biblioteca podrá contener múltiples Estantes.
+
+El nombre de un Estante deberá ser único dentro de una misma Biblioteca, aunque podrá repetirse en Bibliotecas diferentes.
+
+La ocupación actual no se almacenará como un atributo independiente, ya que podrá calcularse a partir de los Ejemplares que se encuentren físicamente ubicados en el Estante.
+
+### 9.12. Lectura
+
+Representa una experiencia de lectura correspondiente a un Ejemplar específico.
+
+Sus principales atributos serán:
+
+- `id`: identificador único de la lectura.
+- `ejemplar_id`: referencia al Ejemplar leído.
+- `estado`: estado actual de la lectura.
+- `fecha_inicio`: fecha opcional de inicio.
+- `fecha_fin`: fecha opcional de finalización.
+- `calificacion`: valoración opcional mediante un número entero de 1 a 5.
+- `resena`: reseña opcional correspondiente a esa lectura.
+
+Los estados posibles serán PENDIENTE, EN_CURSO, ABANDONADO y LEIDO.
+
+Un Ejemplar podrá tener múltiples Lecturas, permitiendo conservar las diferentes relecturas realizadas a lo largo del tiempo.
+
+La duración de una Lectura no se almacenará como atributo independiente, ya que podrá calcularse cuando existan fecha de inicio y fecha de finalización.
+
+Del mismo modo, los promedios de calificaciones se calcularán a partir de las Lecturas existentes y no se almacenarán de manera redundante.
+
+### 9.13. Prestamo
+
+Representa el préstamo de un Ejemplar físico a una persona externa.
+
+Sus principales atributos serán:
+
+- `id`: identificador único del préstamo.
+- `ejemplar_id`: referencia al Ejemplar prestado.
+- `nombre_destinatario`: nombre de la persona que recibe el ejemplar.
+- `apellido_destinatario`: apellido de la persona que recibe el ejemplar.
+- `telefono_destinatario`: teléfono opcional del destinatario.
+- `email_destinatario`: correo electrónico opcional del destinatario.
+- `fecha_prestamo`: fecha en la que se realiza el préstamo.
+- `fecha_prevista_devolucion`: fecha opcional acordada para la devolución.
+- `fecha_devolucion`: fecha real de devolución, cuando corresponda.
+- `estado`: estado actual del préstamo.
+
+Los estados posibles serán ACTIVO, VENCIDO, DEVUELTO y CANCELADO.
+
+Un Ejemplar podrá tener múltiples Préstamos históricos, pero no podrá poseer más de un préstamo activo al mismo tiempo.
+
+No se creará una entidad independiente para los destinatarios de los préstamos, ya que los datos necesarios se almacenarán directamente en cada Préstamo.
+
+### 9.14. Anotacion
+
+Representa una nota privada creada por el usuario.
+
+Sus principales atributos serán:
+
+- `id`: identificador único de la anotación.
+- `usuario_id`: referencia al usuario propietario de la anotación.
+- `ejemplar_id`: referencia opcional al Ejemplar relacionado.
+- `titulo`: título opcional de la anotación.
+- `contenido`: contenido de la nota.
+- `fecha_creacion`: fecha de creación.
+- `fecha_modificacion`: fecha de la última modificación.
+
+Cuando `ejemplar_id` no posea un valor, la anotación será considerada una anotación general o post-it del usuario.
+
+Cuando `ejemplar_id` haga referencia a un Ejemplar, la anotación estará asociada exclusivamente a esa copia física.
+
+Las anotaciones no se asociarán a una Lectura particular. Por este motivo, diferentes relecturas de un mismo Ejemplar podrán compartir las anotaciones pertenecientes a ese Ejemplar sin modificar el historial de cada Lectura.
+
+### 9.15. Wishlist
+
+Representa un elemento incorporado por el usuario a su lista de deseos.
+
+Sus principales atributos serán:
+
+- `id`: identificador único del elemento.
+- `usuario_id`: referencia al usuario propietario de la Wishlist.
+- `libro_id`: referencia opcional a un Libro cuando se conoce una edición bibliográfica concreta.
+- `titulo`: título del libro deseado.
+- `autor_referencia`: autor o autores informados como referencia cuando todavía no existe una edición bibliográfica asociada.
+- `isbn`: ISBN opcional cuando el usuario desea una edición específica.
+- `estado`: estado del elemento dentro de la Wishlist.
+- `fecha_creacion`: fecha en la que el elemento fue incorporado.
+
+Los estados posibles serán PENDIENTE, ADQUIRIDO y DESCARTADO.
+
+La referencia a Libro será opcional porque un usuario podrá agregar a su Wishlist un libro de forma genérica, sin conocer todavía la edición o ISBN que finalmente adquirirá.
+
+Cuando se conozca una edición específica, el elemento podrá vincularse con el Libro correspondiente.
+
+Al marcar un elemento como ADQUIRIDO, el registro de Wishlist se conservará como parte del historial y se generará el Ejemplar físico correspondiente.
+
+## 10. Relaciones y cardinalidades
+
+Las entidades de BookNest se relacionarán de acuerdo con las necesidades funcionales y las reglas de negocio definidas para el sistema.
+
+Las principales relaciones serán:
+
+- **Usuario 1:N Biblioteca:** un usuario podrá crear múltiples Bibliotecas, mientras que cada Biblioteca pertenecerá a un único usuario.
+- **Biblioteca 1:N Estante:** una Biblioteca podrá contener múltiples Estantes y cada Estante pertenecerá a una única Biblioteca.
+- **Usuario 1:N Ejemplar:** un usuario podrá poseer múltiples Ejemplares y cada Ejemplar pertenecerá a un único usuario.
+- **Libro 1:N Ejemplar:** un Libro podrá estar asociado a múltiples copias físicas, mientras que cada Ejemplar corresponderá a un único Libro.
+- **Estante 1:N Ejemplar:** un Estante podrá contener múltiples Ejemplares. La relación será opcional desde Ejemplar, ya que una copia podrá encontrarse sin ubicación asignada.
+- **Editorial 1:N Libro:** una Editorial podrá publicar múltiples Libros. La asociación será opcional desde Libro.
+- **Saga 1:N Libro:** una Saga podrá contener múltiples Libros. La asociación será opcional desde Libro.
+- **Libro N:M Autor:** un Libro podrá tener múltiples Autores y un Autor podrá estar asociado a múltiples Libros. La relación se resolverá mediante LibroAutor.
+- **Libro N:M Genero:** un Libro podrá pertenecer a múltiples Géneros y un Género podrá contener múltiples Libros. La relación se resolverá mediante LibroGenero.
+- **Ejemplar 1:N Lectura:** un Ejemplar podrá registrar múltiples Lecturas o relecturas.
+- **Ejemplar 1:N Prestamo:** un Ejemplar podrá registrar múltiples Préstamos históricos.
+- **Usuario 1:N Anotacion:** un usuario podrá crear múltiples Anotaciones.
+- **Ejemplar 1:N Anotacion:** un Ejemplar podrá tener múltiples Anotaciones. La relación será opcional desde Anotacion para permitir notas generales.
+- **Usuario 1:N Wishlist:** un usuario podrá registrar múltiples elementos en su lista de deseos.
+- **Libro 1:N Wishlist:** un Libro podrá ser referenciado por diferentes elementos de Wishlist. La asociación será opcional desde Wishlist.
+
+Las relaciones opcionales permitirán representar correctamente situaciones como Ejemplares sin ubicación física, Libros sin Editorial o Saga informada, anotaciones generales y elementos de Wishlist sin una edición bibliográfica definida.
+
+## 11. Diccionario de datos
+
+### 11.1. Usuario
+
+| Campo | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| id | BIGINT | PK, autoincremental | Identificador único |
+| nombre | VARCHAR(100) | NOT NULL | Nombre del usuario |
+| apellido | VARCHAR(100) | NOT NULL | Apellido del usuario |
+| email | VARCHAR(255) | NOT NULL, UNIQUE | Correo utilizado para autenticación |
+| password_hash | VARCHAR(255) | NOT NULL | Hash de la contraseña |
+| fecha_registro | DATETIME | NOT NULL | Fecha de creación de la cuenta |
+| estado | VARCHAR(20) | NOT NULL | Estado ACTIVA o INACTIVA |
+
+### 11.2. Libro
+
+| Campo | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| id | BIGINT | PK, autoincremental | Identificador único |
+| titulo | VARCHAR(255) | NOT NULL | Título del libro |
+| isbn | VARCHAR(20) | NULL | ISBN de la edición |
+| fecha_publicacion | DATE | NULL | Fecha de publicación |
+| sinopsis | TEXT | NULL | Sinopsis del libro |
+| portada_url | VARCHAR(500) | NULL | Referencia a la portada |
+| editorial_id | BIGINT | FK, NULL | Editorial de la edición |
+| saga_id | BIGINT | FK, NULL | Saga a la que pertenece |
+| posicion_saga | DECIMAL(5,2) | NULL | Posición dentro de la saga |
+
+### 11.3. Autor
+
+| Campo | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| id | BIGINT | PK, autoincremental | Identificador único |
+| nombre | VARCHAR(255) | NOT NULL | Nombre del autor |
+
+### 11.4. LibroAutor
+
+| Campo | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| libro_id | BIGINT | PK, FK | Referencia al Libro |
+| autor_id | BIGINT | PK, FK | Referencia al Autor |
+
+### 11.5. Genero
+
+| Campo | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| id | BIGINT | PK, autoincremental | Identificador único |
+| nombre | VARCHAR(100) | NOT NULL | Nombre del género |
+
+### 11.6. LibroGenero
+
+| Campo | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| libro_id | BIGINT | PK, FK | Referencia al Libro |
+| genero_id | BIGINT | PK, FK | Referencia al Género |
+
+### 11.7. Editorial
+
+| Campo | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| id | BIGINT | PK, autoincremental | Identificador único |
+| nombre | VARCHAR(255) | NOT NULL | Nombre de la editorial |
+
+### 11.8. Saga
+
+| Campo | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| id | BIGINT | PK, autoincremental | Identificador único |
+| nombre | VARCHAR(255) | NOT NULL | Nombre de la saga |
+
+### 11.9. Ejemplar
+
+| Campo | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| id | BIGINT | PK, autoincremental | Identificador del ejemplar |
+| usuario_id | BIGINT | FK, NOT NULL | Usuario propietario |
+| libro_id | BIGINT | FK, NOT NULL | Edición bibliográfica |
+| estante_id | BIGINT | FK, NULL | Ubicación física actual |
+| fecha_adquisicion | DATE | NULL | Fecha de adquisición |
+| estado_fisico | VARCHAR(20) | NULL | Estado de conservación |
+| precio_compra | DECIMAL(10,2) | NULL | Precio de adquisición |
+| moneda | VARCHAR(10) | NULL | Moneda del precio |
+| observacion | TEXT | NULL | Observaciones de la copia |
+| activo | BOOLEAN | NOT NULL | Indica si el ejemplar está activo |
+
+### 11.10. Biblioteca
+
+| Campo | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| id | BIGINT | PK, autoincremental | Identificador único |
+| usuario_id | BIGINT | FK, NOT NULL | Usuario propietario |
+| nombre | VARCHAR(100) | NOT NULL | Nombre de la biblioteca |
+
+### 11.11. Estante
+
+| Campo | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| id | BIGINT | PK, autoincremental | Identificador único |
+| biblioteca_id | BIGINT | FK, NOT NULL | Biblioteca a la que pertenece |
+| nombre | VARCHAR(100) | NOT NULL | Nombre del estante |
+| capacidad | INT | NOT NULL | Cantidad máxima de ejemplares |
+
+### 11.12. Lectura
+
+| Campo | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| id | BIGINT | PK, autoincremental | Identificador único |
+| ejemplar_id | BIGINT | FK, NOT NULL | Ejemplar leído |
+| estado | VARCHAR(20) | NOT NULL | Estado de la lectura |
+| fecha_inicio | DATE | NULL | Inicio de la lectura |
+| fecha_fin | DATE | NULL | Finalización de la lectura |
+| calificacion | TINYINT | NULL | Valoración de 1 a 5 |
+| resena | TEXT | NULL | Reseña de la lectura |
+
+### 11.13. Prestamo
+
+| Campo | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| id | BIGINT | PK, autoincremental | Identificador único |
+| ejemplar_id | BIGINT | FK, NOT NULL | Ejemplar prestado |
+| nombre_destinatario | VARCHAR(100) | NOT NULL | Nombre del destinatario |
+| apellido_destinatario | VARCHAR(100) | NOT NULL | Apellido del destinatario |
+| telefono_destinatario | VARCHAR(50) | NULL | Teléfono opcional |
+| email_destinatario | VARCHAR(255) | NULL | Correo opcional |
+| fecha_prestamo | DATE | NOT NULL | Fecha del préstamo |
+| fecha_prevista_devolucion | DATE | NULL | Fecha esperada de devolución |
+| fecha_devolucion | DATE | NULL | Fecha real de devolución |
+| estado | VARCHAR(20) | NOT NULL | Estado del préstamo |
+
+### 11.14. Anotacion
+
+| Campo | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| id | BIGINT | PK, autoincremental | Identificador único |
+| usuario_id | BIGINT | FK, NOT NULL | Usuario propietario |
+| ejemplar_id | BIGINT | FK, NULL | Ejemplar relacionado, si corresponde |
+| titulo | VARCHAR(255) | NULL | Título opcional |
+| contenido | TEXT | NOT NULL | Contenido de la anotación |
+| fecha_creacion | DATETIME | NOT NULL | Fecha de creación |
+| fecha_modificacion | DATETIME | NOT NULL | Última modificación |
+
+### 11.15. Wishlist
+
+| Campo | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| id | BIGINT | PK, autoincremental | Identificador único |
+| usuario_id | BIGINT | FK, NOT NULL | Usuario propietario |
+| libro_id | BIGINT | FK, NULL | Edición bibliográfica, si está definida |
+| titulo | VARCHAR(255) | NOT NULL | Título deseado |
+| autor_referencia | VARCHAR(500) | NULL | Autor o autores de referencia |
+| isbn | VARCHAR(20) | NULL | ISBN deseado, si se conoce |
+| estado | VARCHAR(20) | NOT NULL | PENDIENTE, ADQUIRIDO o DESCARTADO |
+| fecha_creacion | DATETIME | NOT NULL | Fecha de incorporación |
+
+## 12. Claves y restricciones de integridad
+
+El modelo utilizará claves primarias, claves foráneas y restricciones adicionales para mantener la consistencia de la información.
+
+### 12.1. Claves primarias
+
+Las entidades principales utilizarán un identificador `id` como clave primaria.
+
+Las tablas asociativas `LibroAutor` y `LibroGenero` utilizarán claves primarias compuestas por los identificadores de las entidades relacionadas.
+
+### 12.2. Claves foráneas
+
+Las principales claves foráneas serán:
+
+- `Libro.editorial_id` → `Editorial.id`
+- `Libro.saga_id` → `Saga.id`
+- `LibroAutor.libro_id` → `Libro.id`
+- `LibroAutor.autor_id` → `Autor.id`
+- `LibroGenero.libro_id` → `Libro.id`
+- `LibroGenero.genero_id` → `Genero.id`
+- `Ejemplar.usuario_id` → `Usuario.id`
+- `Ejemplar.libro_id` → `Libro.id`
+- `Ejemplar.estante_id` → `Estante.id`
+- `Biblioteca.usuario_id` → `Usuario.id`
+- `Estante.biblioteca_id` → `Biblioteca.id`
+- `Lectura.ejemplar_id` → `Ejemplar.id`
+- `Prestamo.ejemplar_id` → `Ejemplar.id`
+- `Anotacion.usuario_id` → `Usuario.id`
+- `Anotacion.ejemplar_id` → `Ejemplar.id`
+- `Wishlist.usuario_id` → `Usuario.id`
+- `Wishlist.libro_id` → `Libro.id`
+
+### 12.3. Restricciones adicionales
+
+Se contemplarán las siguientes restricciones:
+
+- El correo electrónico de Usuario deberá ser único.
+- El nombre de una Biblioteca será único dentro de cada Usuario.
+- El nombre de un Estante será único dentro de cada Biblioteca.
+- Una combinación Libro-Autor no podrá repetirse en `LibroAutor`.
+- Una combinación Libro-Genero no podrá repetirse en `LibroGenero`.
+- La capacidad de un Estante deberá ser mayor que cero.
+- La calificación de una Lectura, cuando exista, deberá ser un número entero entre 1 y 5.
+- El precio de compra de un Ejemplar, cuando exista, no podrá ser negativo.
+- Un Ejemplar no podrá tener más de un Préstamo activo simultáneamente.
+- Un Estante no podrá superar su capacidad máxima de Ejemplares físicamente presentes.
+- La capacidad de un Estante no podrá reducirse por debajo de su ocupación actual.
+- Las claves foráneas opcionales permitirán representar los casos definidos por las reglas de negocio sin forzar la existencia de información que el usuario todavía no posea.
+
+## 13. Normalización
+
+El modelo relacional de BookNest se diseñará buscando cumplir con la Tercera Forma Normal (3FN), reduciendo redundancias y evitando dependencias innecesarias entre los datos.
+
+### 13.1. Primera Forma Normal
+
+Cada atributo almacenará valores atómicos y no se utilizarán campos que contengan listas de valores.
+
+Por ejemplo, los autores de un Libro no se almacenarán como una cadena de texto con varios nombres. Se utilizarán las entidades `Autor` y `LibroAutor`.
+
+De la misma manera, los géneros serán representados mediante `Genero` y `LibroGenero`.
+
+### 13.2. Segunda Forma Normal
+
+Los atributos dependerán de la totalidad de su clave primaria.
+
+Esto resulta especialmente importante en las tablas asociativas `LibroAutor` y `LibroGenero`, cuyas claves representan la combinación de las entidades relacionadas.
+
+### 13.3. Tercera Forma Normal
+
+Los atributos no clave dependerán directamente de la clave primaria de su entidad y se evitarán dependencias transitivas.
+
+Por este motivo, conceptos como Editorial, Saga, Autor y Genero se representarán mediante entidades independientes en lugar de repetir sus datos en cada Libro.
+
+Asimismo, los datos que puedan calcularse a partir de otros valores no se almacenarán innecesariamente.
+
+Entre ellos se encuentran:
+
+- la ocupación actual de un Estante;
+- la duración de una Lectura;
+- el promedio de calificaciones;
+- las cantidades utilizadas en las estadísticas del Dashboard.
+
+Estos valores podrán obtenerse mediante consultas y cálculos realizados por el sistema.
+
+## 14. Diagrama entidad-relación
+
+El siguiente diagrama representa las principales entidades del modelo y sus relaciones.
+
+```mermaid
+erDiagram
+
+    USUARIO ||--o{ BIBLIOTECA : posee
+    BIBLIOTECA ||--o{ ESTANTE : contiene
+
+    USUARIO ||--o{ EJEMPLAR : posee
+    LIBRO ||--o{ EJEMPLAR : representa
+    ESTANTE o|--o{ EJEMPLAR : ubica
+
+    EDITORIAL o|--o{ LIBRO : publica
+    SAGA o|--o{ LIBRO : agrupa
+
+    LIBRO ||--o{ LIBRO_AUTOR : tiene
+    AUTOR ||--o{ LIBRO_AUTOR : participa
+
+    LIBRO ||--o{ LIBRO_GENERO : clasifica
+    GENERO ||--o{ LIBRO_GENERO : pertenece
+
+    EJEMPLAR ||--o{ LECTURA : registra
+    EJEMPLAR ||--o{ PRESTAMO : registra
+
+    USUARIO ||--o{ ANOTACION : crea
+    EJEMPLAR o|--o{ ANOTACION : posee
+
+    USUARIO ||--o{ WISHLIST : mantiene
+    LIBRO o|--o{ WISHLIST : referencia
+```
+
+Las relaciones opcionales reflejan situaciones contempladas por las reglas de negocio. Por ejemplo, un Ejemplar puede permanecer sin Estante asignado, un Libro puede no tener Editorial o Saga informada y un elemento de Wishlist puede existir sin estar vinculado todavía a una edición bibliográfica concreta.
+
+## 15. Integración con servicios bibliográficos externos
+
+La integración con servicios bibliográficos externos se realizará desde el backend de BookNest, evitando que el frontend dependa directamente de proveedores externos.
+
+Cuando el usuario ingrese un ISBN, el frontend enviará la solicitud al backend mediante la API REST. El backend utilizará un componente específico de integración para consultar el servicio bibliográfico externo.
+
+El flujo general será:
+
+Usuario → Frontend → Backend → Servicio bibliográfico externo
+
+Una vez obtenida la respuesta:
+
+Servicio bibliográfico externo → Backend → Transformación de datos → Frontend
+
+El backend será responsable de transformar los datos recibidos al formato utilizado internamente por BookNest.
+
+Los metadatos obtenidos podrán incluir título, autores, editorial, fecha de publicación, géneros, sinopsis y portada, dependiendo de la información disponible en el proveedor externo.
+
+Antes de guardar la información, el usuario podrá revisar, corregir o completar los datos obtenidos.
+
+Si el servicio externo no posee información para el ISBN ingresado o se encuentra temporalmente indisponible, el usuario podrá continuar mediante la carga manual. De esta manera, la disponibilidad de la API externa no impedirá utilizar las funciones principales de BookNest.
+
+La información bibliográfica incorporada al sistema será almacenada en la base de datos propia de BookNest y no dependerá permanentemente de la disponibilidad del servicio externo.
+
+### Gestión de portadas
+
+Cuando el servicio bibliográfico proporcione una portada, BookNest podrá utilizar inicialmente la referencia recibida.
+
+Si no existe una portada disponible, se utilizará una imagen genérica de BookNest.
+
+El usuario también podrá cargar o reemplazar la portada mediante una imagen propia.
+
+Las imágenes cargadas por los usuarios no se almacenarán directamente como datos binarios dentro de MySQL. La arquitectura contemplará un mecanismo de almacenamiento de archivos o imágenes y la base de datos conservará únicamente la URL o referencia necesaria para acceder a la portada.
+
+## 16. Conclusión
+
+La arquitectura propuesta para BookNest organiza el sistema mediante capas y módulos con responsabilidades claramente diferenciadas, buscando mantener un bajo acoplamiento y una alta cohesión.
+
+El modelo de datos relacional permite representar tanto la información bibliográfica como las copias físicas pertenecientes a los usuarios, manteniendo separados conceptos como libros, ejemplares, lecturas, préstamos, ubicaciones y anotaciones.
+
+La utilización de relaciones normalizadas, restricciones de integridad y tablas asociativas permitirá mantener la consistencia de la información y reducir redundancias.
+
+A su vez, la separación de las integraciones externas permitirá incorporar servicios bibliográficos sin generar una dependencia directa entre la lógica principal de BookNest y un proveedor específico.
+
+Esta arquitectura constituye la base para la posterior implementación del backend, la API REST, la persistencia de datos y las funcionalidades correspondientes al MVP.
+
