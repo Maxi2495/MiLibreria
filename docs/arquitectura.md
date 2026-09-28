@@ -76,6 +76,24 @@ Inicialmente, BookNest contará con una integración bibliográfica que permitir
 
 BookNest se organizará en módulos funcionales con responsabilidades específicas. Esta división busca mantener una alta cohesión dentro de cada módulo y reducir el acoplamiento entre las distintas funcionalidades del sistema.
 
+### Prioridad de implementación
+
+La prioridad indicada a continuación representa el orden de implementación previsto según las dependencias entre los módulos. Todos los módulos enumerados forman parte del alcance funcional definido para el MVP de BookNest.
+
+| Módulo | Descripción | Prioridad |
+|---|---|---|
+| Usuarios y Autenticación | Gestiona el registro, inicio de sesión, datos de perfil y estado de las cuentas de usuario. | Alta |
+| Catálogo de Libros y Ejemplares | Gestiona la información bibliográfica de los libros y las copias físicas pertenecientes a cada usuario. | Alta |
+| Bibliotecas y Estantes | Permite organizar físicamente los ejemplares en bibliotecas y estantes configurables, controlando su capacidad. | Alta |
+| Lecturas | Registra el estado, fechas, calificaciones y reseñas correspondientes a las distintas lecturas de cada ejemplar. | Media |
+| Préstamos | Gestiona los préstamos de ejemplares, destinatarios, fechas y estados de devolución. | Media |
+| Wishlist | Permite registrar libros deseados y gestionar su posterior adquisición o descarte. | Media |
+| Anotaciones | Permite crear y administrar anotaciones generales o asociadas a un ejemplar. | Media |
+| Integración bibliográfica | Obtiene información bibliográfica y portadas desde servicios externos para facilitar la carga de libros. | Media |
+| Dashboard | Presenta indicadores y estadísticas construidos a partir de la información registrada en los demás módulos. | Baja |
+
+Las prioridades no indican que los módulos de prioridad media o baja sean opcionales. Se utilizan únicamente para establecer una secuencia de desarrollo: primero se implementarán los módulos estructurales de los que dependen las funcionalidades posteriores.
+
 ### 5.1. Módulo de Usuarios y Autenticación
 
 Será responsable de la gestión de las cuentas de usuario y del acceso seguro al sistema.
@@ -898,6 +916,27 @@ Si no existe una portada disponible, se utilizará una imagen genérica de BookN
 El usuario también podrá cargar o reemplazar la portada mediante una imagen propia.
 
 Las imágenes cargadas por los usuarios no se almacenarán directamente como datos binarios dentro de MySQL. La arquitectura contemplará un mecanismo de almacenamiento de archivos o imágenes y la base de datos conservará únicamente la URL o referencia necesaria para acceder a la portada.
+
+## 15.1. Tecnologías definitivas y justificación
+
+Para la implementación de BookNest se definieron las siguientes tecnologías, seleccionadas de acuerdo con las necesidades funcionales y arquitectónicas del proyecto:
+
+| Tecnología | Uso en BookNest | Justificación |
+|---|---|---|
+| HTML5 | Estructura de la interfaz web | Permite definir de manera semántica la estructura de las distintas vistas de la aplicación. |
+| CSS3 | Presentación y estilos | Permite diseñar una interfaz adaptable y mantener separada la presentación de la estructura y la lógica de la aplicación. |
+| JavaScript | Interacción del frontend | Permitirá implementar el comportamiento dinámico de la interfaz y realizar solicitudes HTTP al backend. |
+| Python | Lenguaje del backend | Se utilizará para implementar la lógica del servidor por su legibilidad, mantenibilidad y compatibilidad con el framework y las herramientas seleccionadas. |
+| FastAPI | API REST del backend | Facilita la construcción de APIs REST en Python, permite validación de datos y genera documentación interactiva de los endpoints. |
+| SQLAlchemy | Persistencia y ORM | Permite representar y manipular las entidades de la base de datos desde Python, manteniendo separada la lógica de negocio de los detalles de persistencia. |
+| MySQL | Base de datos relacional | Se adapta al modelo relacional definido para BookNest y permite implementar relaciones, claves y restricciones de integridad entre las entidades. |
+| HTTP/JSON | Comunicación cliente-servidor | Se utilizarán como protocolo y formato de intercambio de datos entre el frontend y la API REST. |
+| Git y GitHub | Control de versiones y repositorio | Permiten mantener el historial de cambios, trabajar mediante ramas y Pull Requests y registrar la evolución y participación del equipo. |
+| Swagger/OpenAPI | Documentación y prueba de la API | Permitirá documentar y probar los endpoints REST durante el desarrollo, aprovechando la integración provista por FastAPI. |
+| Postman | Pruebas de la API | Se utilizará como herramienta complementaria para realizar y organizar pruebas manuales sobre los endpoints HTTP. |
+| Mermaid | Diagramación técnica | Permite mantener diagramas técnicos como texto versionable dentro del mismo repositorio GitHub. |
+
+Estas tecnologías se consideran definitivas para el desarrollo del MVP. Cualquier modificación posterior deberá quedar documentada y justificada en el repositorio.
 
 ## 16. Conclusión
 

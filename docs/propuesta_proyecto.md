@@ -80,19 +80,23 @@ Desarrollar una aplicación web que permita a los usuarios gestionar, organizar 
 
 ### 5.4. Lista de Deseos (Wishlist)
 * Registro de libros pendientes de compra.
-* Flujo de conversión: al marcar un libro como adquirido, se transfiere al catálogo y se le asigna un estante físico.
+* Flujo de conversión: al marcar un libro como adquirido, se crea el ejemplar físico correspondiente en el catálogo, inicialmente sin necesidad de asignarle una ubicación.
+* El nuevo ejemplar genera un primer registro de lectura en estado *Pendiente* y conserva el historial del elemento adquirido en la wishlist.
 
 ### 5.5. Gestión de Espacios Físicos y Representación Visual
 * Creación de muebles/bibliotecas y asignación de estantes con capacidad máxima de ejemplares.
 * Representación gráfica del nivel de ocupación de cada estante (porcentaje y tarjetas de libros).
 
 ### 5.6. Seguimiento de Lectura
-* Estados: *Pendiente de lectura*, *En lectura*, *Leído*, *Abandonado*.
-* Fechas de inicio/fin, calificación (estrellas), reseñas y anotaciones privadas.
+* Estados: *Pendiente de lectura*, *En curso*, *Leído*, *Abandonado*.
+* Registro de múltiples lecturas o relecturas por ejemplar.
+* Fechas de inicio/fin, calificación y reseña asociadas a cada lectura.
+* Las anotaciones se gestionan de manera independiente y pueden ser generales o estar asociadas a un ejemplar.
 
 ### 5.7. Control de Préstamos
-* Registro de destinatario, fecha de salida, fecha límite de devolución y observaciones de estado.
-* Indicador de disponibilidad: un libro prestado no puede ser prestado nuevamente hasta su retorno.
+* Registro de destinatario, fecha de salida y fecha prevista de devolución opcional.
+* Estados del préstamo: *Activo*, *Vencido*, *Devuelto* y *Cancelado*.
+* Indicador de disponibilidad: un ejemplar con un préstamo activo no puede ser prestado nuevamente hasta su devolución o cancelación.
 
 ### 5.8. Dashboard y Estadísticas
 * Gráficos por género, autores predominantes, estado de lectura y ocupación de estanterías.
