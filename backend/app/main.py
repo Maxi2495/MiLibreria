@@ -1,5 +1,6 @@
 
 from fastapi import FastAPI
+from app.routers.usuarios import router as usuarios_router
 
 app = FastAPI(
     title="BookNest API",
@@ -20,3 +21,5 @@ def verificar_estado():
     return {
         "status": "ok"
     }
+
+app.include_router(usuarios_router)
