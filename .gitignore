@@ -22,4 +22,4 @@ Thumbs.db
 # Archivos temporales y logs
 *.log
 .pytest_cache/
->>>>>>> main
+
