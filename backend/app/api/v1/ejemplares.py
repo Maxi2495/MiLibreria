@@ -4,13 +4,15 @@ from typing import List, Optional
 
 from app.db.session import get_db
 from app.models.catalogo import Libro
-from app.models.espacio import Estante
+from app.models.espacio import Biblioteca, Estante
 from app.models.ejemplar import Ejemplar, Lectura, Prestamo
 from app.schemas.ejemplar import (
     EjemplarCreate,
     EjemplarResponse,
     EjemplarUpdate
 )
+from app.dependencies import get_current_user
+from app.models.usuario import Usuario
 
 router = APIRouter(prefix="/ejemplares", tags=["Ejemplares Físicos"])
 
@@ -49,7 +51,7 @@ def calcular_ocupacion_estante(estante_id: int, db: Session) -> int:
 @router.post("/", response_model=EjemplarResponse, status_code=status.HTTP_201_CREATED)
 def crear_ejemplar(
     ejemplar_in: EjemplarCreate,
-    usuario_id: int = 1,  # Fijo temporalmente hasta integrar autenticación JWT
+    usuario_actual: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     # A. Validar que el libro exista en el catálogo
@@ -62,7 +64,15 @@ def crear_ejemplar(
 
     # B. Si se especificó ubicación física, validar estante y capacidad
     if ejemplar_in.estante_id is not None:
-        estante = db.query(Estante).filter(Estante.id == ejemplar_in.estante_id).first()
+        estante = (
+            db.query(Estante)
+            .join(Biblioteca, Estante.biblioteca_id == Biblioteca.id)
+            .filter(
+                Estante.id == ejemplar_in.estante_id,
+                Biblioteca.usuario_id == usuario_actual.id
+            )
+            .first()
+        )
         if not estante:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -78,7 +88,7 @@ def crear_ejemplar(
 
     # C. Instanciar la copia física
     nuevo_ejemplar = Ejemplar(
-        usuario_id=usuario_id,
+        usuario_id=usuario_actual.id,
         libro_id=ejemplar_in.libro_id,
         estante_id=ejemplar_in.estante_id,
         fecha_adquisicion=ejemplar_in.fecha_adquisicion,
@@ -108,16 +118,19 @@ def crear_ejemplar(
 # 2. LISTADO Y FILTROS DE EJEMPLARES
 # ============================================================
 
+
 @router.get("/", response_model=List[EjemplarResponse])
 def listar_ejemplares(
     libro_id: Optional[int] = Query(None, description="Filtrar copias de un libro"),
     estante_id: Optional[int] = Query(None, description="Filtrar por estante"),
     sin_ubicacion: Optional[bool] = Query(None, description="Filtrar ejemplares sin estante asignado"),
     solo_activos: bool = Query(True, description="Mostrar solo ejemplares activos"),
-    usuario_id: int = 1,
+    usuario_actual: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    query = db.query(Ejemplar).filter(Ejemplar.usuario_id == usuario_id)
+    query = db.query(Ejemplar).filter(
+        Ejemplar.usuario_id == usuario_actual.id
+    )
 
     if solo_activos:
         query = query.filter(Ejemplar.activo == True)
@@ -135,16 +148,18 @@ def listar_ejemplares(
 # 3. DETALLE DE UN EJEMPLAR
 # ============================================================
 
+
 @router.get("/{ejemplar_id}", response_model=EjemplarResponse)
 def obtener_ejemplar(
     ejemplar_id: int,
-    usuario_id: int = 1,
+    usuario_actual: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     ejemplar = db.query(Ejemplar).filter(
         Ejemplar.id == ejemplar_id,
-        Ejemplar.usuario_id == usuario_id
+        Ejemplar.usuario_id == usuario_actual.id
     ).first()
+
 
     if not ejemplar:
         raise HTTPException(
@@ -158,17 +173,19 @@ def obtener_ejemplar(
 # 4. ACTUALIZACIÓN (Reubicación, cambio de condición física)
 # ============================================================
 
+
 @router.put("/{ejemplar_id}", response_model=EjemplarResponse)
 def actualizar_ejemplar(
     ejemplar_id: int,
     ejemplar_in: EjemplarUpdate,
-    usuario_id: int = 1,
+    usuario_actual: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     ejemplar = db.query(Ejemplar).filter(
         Ejemplar.id == ejemplar_id,
-        Ejemplar.usuario_id == usuario_id
+        Ejemplar.usuario_id == usuario_actual.id
     ).first()
+
 
     if not ejemplar:
         raise HTTPException(
@@ -178,7 +195,15 @@ def actualizar_ejemplar(
 
     # Si se cambia o asigna un nuevo estante, verificar disponibilidad física
     if ejemplar_in.estante_id is not None and ejemplar_in.estante_id != ejemplar.estante_id:
-        nuevo_estante = db.query(Estante).filter(Estante.id == ejemplar_in.estante_id).first()
+        nuevo_estante = (
+            db.query(Estante)
+            .join(Biblioteca, Estante.biblioteca_id == Biblioteca.id)
+            .filter(
+                Estante.id == ejemplar_in.estante_id,
+                Biblioteca.usuario_id == usuario_actual.id
+            )
+            .first()
+        )
         if not nuevo_estante:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -216,15 +241,16 @@ def actualizar_ejemplar(
 # 5. BAJA LÓGICA (Regla 6.2 y 6.7)
 # ============================================================
 
+
 @router.delete("/{ejemplar_id}", status_code=status.HTTP_204_NO_CONTENT)
 def dar_de_baja_ejemplar(
     ejemplar_id: int,
-    usuario_id: int = 1,
+    usuario_actual: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     ejemplar = db.query(Ejemplar).filter(
         Ejemplar.id == ejemplar_id,
-        Ejemplar.usuario_id == usuario_id
+        Ejemplar.usuario_id == usuario_actual.id
     ).first()
 
     if not ejemplar:
