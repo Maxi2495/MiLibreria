@@ -5,9 +5,11 @@ from sqlalchemy import select, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.db.session import get_db
+from app.dependencies import get_current_user
 from app.models.catalogo import Libro, Autor
-from app.models.espacio import Estante
+from app.models.espacio import Biblioteca, Estante
 from app.models.ejemplar import Ejemplar, Lectura, Prestamo
+from app.models.usuario import Usuario
 from app.schemas.ejemplar import (
     EjemplarCreate,
     EjemplarResponse,
@@ -60,7 +62,7 @@ def calcular_ocupacion_estante(estante_id: int, db: Session) -> int:
 @router.post("/", response_model=EjemplarResponse, status_code=status.HTTP_201_CREATED)
 def crear_ejemplar(
     ejemplar_in: EjemplarCreate,
-    usuario_id: int = 1,  # Fijo temporalmente hasta integrar autenticación JWT
+    usuario_actual: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     # A. Validar que el libro exista en el catálogo
@@ -72,14 +74,21 @@ def crear_ejemplar(
             detail=f"El libro con ID {ejemplar_in.libro_id} no existe en el catálogo."
         )
 
-    # B. Si se especificó ubicación física, validar estante y capacidad
+    # B. Si se especificó ubicación física, validar estante, propiedad y capacidad
     if ejemplar_in.estante_id is not None:
-        stmt_estante = select(Estante).where(Estante.id == ejemplar_in.estante_id)
+        stmt_estante = (
+            select(Estante)
+            .join(Biblioteca, Estante.biblioteca_id == Biblioteca.id)
+            .where(
+                Estante.id == ejemplar_in.estante_id,
+                Biblioteca.usuario_id == usuario_actual.id
+            )
+        )
         estante = db.execute(stmt_estante).scalar_one_or_none()
         if not estante:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"El estante con ID {ejemplar_in.estante_id} no existe."
+                detail="El estante especificado no existe o no pertenece a tus bibliotecas."
             )
 
         ocupacion_actual = calcular_ocupacion_estante(estante.id, db)
@@ -89,9 +98,9 @@ def crear_ejemplar(
                 detail=f"El estante '{estante.nombre}' no tiene espacio disponible ({ocupacion_actual}/{estante.capacidad})."
             )
 
-    # C. Instanciar la copia física
+    # C. Instanciar la copia física asignada al usuario autenticado
     nuevo_ejemplar = Ejemplar(
-        usuario_id=usuario_id,
+        usuario_id=usuario_actual.id,
         libro_id=ejemplar_in.libro_id,
         estante_id=ejemplar_in.estante_id,
         fecha_adquisicion=ejemplar_in.fecha_adquisicion,
@@ -139,12 +148,12 @@ def listar_ejemplares(
     orden_dir: Literal["asc", "desc"] = Query("desc", description="Sentido del ordenamiento"),
     limit: int = Query(50, ge=1, le=100, description="Límite de paginación"),
     offset: int = Query(0, ge=0, description="Desplazamiento de paginación"),
-    usuario_id: int = Query(1, description="ID del usuario propietario"),
+    usuario_actual: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Lista y filtra los ejemplares físicos de la colección personal del usuario,
-    incorporando trazabilidad de ubicación, estado de préstamo y lecturas (Regla 6.8).
+    Lista y filtra los ejemplares físicos de la colección personal del usuario autenticado,
+    incorporando trazabilidad de ubicación, estado de préstamo y lecturas (Reglas 6.2, 6.7 y 6.8).
     """
     stmt = (
         select(Ejemplar)
@@ -155,7 +164,7 @@ def listar_ejemplares(
             joinedload(Ejemplar.libro).joinedload(Libro.saga),
             joinedload(Ejemplar.estante)
         )
-        .where(Ejemplar.usuario_id == usuario_id)
+        .where(Ejemplar.usuario_id == usuario_actual.id)
     )
 
     # 1. Filtro de activos / bajas lógicas
@@ -230,7 +239,7 @@ def listar_ejemplares(
     else:
         stmt = stmt.order_by(columna_orden.asc())
 
-    # 9. Paginación y ejecución
+    # 9. Paginación y ejecución desduplicada
     stmt = stmt.limit(limit).offset(offset)
     ejemplares = db.execute(stmt).scalars().unique().all()
     return ejemplares
@@ -243,7 +252,7 @@ def listar_ejemplares(
 @router.get("/{ejemplar_id}", response_model=EjemplarResponse)
 def obtener_ejemplar(
     ejemplar_id: int,
-    usuario_id: int = 1,
+    usuario_actual: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     stmt = (
@@ -257,7 +266,7 @@ def obtener_ejemplar(
         )
         .where(
             Ejemplar.id == ejemplar_id,
-            Ejemplar.usuario_id == usuario_id
+            Ejemplar.usuario_id == usuario_actual.id
         )
     )
     ejemplar = db.execute(stmt).scalar_one_or_none()
@@ -278,12 +287,12 @@ def obtener_ejemplar(
 def actualizar_ejemplar(
     ejemplar_id: int,
     ejemplar_in: EjemplarUpdate,
-    usuario_id: int = 1,
+    usuario_actual: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     stmt = select(Ejemplar).where(
         Ejemplar.id == ejemplar_id,
-        Ejemplar.usuario_id == usuario_id
+        Ejemplar.usuario_id == usuario_actual.id
     )
     ejemplar = db.execute(stmt).scalar_one_or_none()
 
@@ -293,14 +302,21 @@ def actualizar_ejemplar(
             detail=f"Ejemplar con ID {ejemplar_id} no encontrado."
         )
 
-    # Reubicación y control de capacidad
+    # Reubicación y control de capacidad verificando propiedad del estante
     if ejemplar_in.estante_id is not None and ejemplar_in.estante_id != ejemplar.estante_id:
-        stmt_estante = select(Estante).where(Estante.id == ejemplar_in.estante_id)
+        stmt_estante = (
+            select(Estante)
+            .join(Biblioteca, Estante.biblioteca_id == Biblioteca.id)
+            .where(
+                Estante.id == ejemplar_in.estante_id,
+                Biblioteca.usuario_id == usuario_actual.id
+            )
+        )
         nuevo_estante = db.execute(stmt_estante).scalar_one_or_none()
         if not nuevo_estante:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"El estante con ID {ejemplar_in.estante_id} no existe."
+                detail="El estante destino no existe o no pertenece a tus bibliotecas."
             )
 
         ocupacion_nueva = calcular_ocupacion_estante(nuevo_estante.id, db)
@@ -336,12 +352,12 @@ def actualizar_ejemplar(
 @router.delete("/{ejemplar_id}", status_code=status.HTTP_204_NO_CONTENT)
 def dar_de_baja_ejemplar(
     ejemplar_id: int,
-    usuario_id: int = 1,
+    usuario_actual: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     stmt = select(Ejemplar).where(
         Ejemplar.id == ejemplar_id,
-        Ejemplar.usuario_id == usuario_id
+        Ejemplar.usuario_id == usuario_actual.id
     )
     ejemplar = db.execute(stmt).scalar_one_or_none()
 
