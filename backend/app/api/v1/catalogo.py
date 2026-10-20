@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
-from typing import List, Optional
+from sqlalchemy import select, or_
+from sqlalchemy.orm import Session, selectinload, joinedload
+from typing import List, Optional, Literal
 
 from app.db.session import get_db
 from app.models.catalogo import Autor, Editorial, Genero, Saga, Libro
@@ -21,7 +22,6 @@ router = APIRouter(prefix="/catalogo", tags=["Catálogo de Libros"])
 
 @router.post("/autores", response_model=AutorResponse, status_code=status.HTTP_201_CREATED)
 def crear_autor(autor_in: AutorCreate, db: Session = Depends(get_db)):
-    # Validación de unicidad de nombre de autor
     existente = db.query(Autor).filter(Autor.nombre.ilike(autor_in.nombre.strip())).first()
     if existente:
         raise HTTPException(
@@ -123,12 +123,12 @@ def listar_sagas(db: Session = Depends(get_db)):
 
 
 # ============================================================
-# 5. GESTIÓN DE LIBROS (EDICIONES BIBLIOGRÁFICAS)
+# 5. GESTIÓN DE LIBROS (CATÁLOGO BIBLIOGRÁFICO)
 # ============================================================
 
 @router.post("/libros", response_model=LibroResponse, status_code=status.HTTP_201_CREATED)
 def crear_libro(libro_in: LibroCreate, db: Session = Depends(get_db)):
-    # A. Validar que la Editorial exista si se proporcionó
+    # Validar Editorial si fue provista
     if libro_in.editorial_id is not None:
         editorial = db.query(Editorial).filter(Editorial.id == libro_in.editorial_id).first()
         if not editorial:
@@ -137,7 +137,7 @@ def crear_libro(libro_in: LibroCreate, db: Session = Depends(get_db)):
                 detail=f"La editorial con ID {libro_in.editorial_id} no existe."
             )
 
-    # B. Validar que la Saga exista si se proporcionó
+    # Validar Saga si fue provista
     if libro_in.saga_id is not None:
         saga = db.query(Saga).filter(Saga.id == libro_in.saga_id).first()
         if not saga:
@@ -146,7 +146,7 @@ def crear_libro(libro_in: LibroCreate, db: Session = Depends(get_db)):
                 detail=f"La saga con ID {libro_in.saga_id} no existe."
             )
 
-    # C. Validar existencia de Autores (Regla 6.2: Mínimo un autor)
+    # Validar existencia de Autores (mínimo 1)
     autores_encontrados = db.query(Autor).filter(Autor.id.in_(libro_in.autores_ids)).all()
     if len(autores_encontrados) != len(set(libro_in.autores_ids)):
         ids_encontrados = {a.id for a in autores_encontrados}
@@ -156,7 +156,7 @@ def crear_libro(libro_in: LibroCreate, db: Session = Depends(get_db)):
             detail=f"Los siguientes IDs de autores no existen: {list(ids_faltantes)}"
         )
 
-    # D. Validar existencia de Géneros si se enviaron
+    # Validar Géneros si se enviaron
     generos_encontrados = []
     if libro_in.generos_ids:
         generos_encontrados = db.query(Genero).filter(Genero.id.in_(libro_in.generos_ids)).all()
@@ -168,7 +168,6 @@ def crear_libro(libro_in: LibroCreate, db: Session = Depends(get_db)):
                 detail=f"Los siguientes IDs de géneros no existen: {list(ids_faltantes)}"
             )
 
-    # E. Instanciar y persistir el Libro
     nuevo_libro = Libro(
         titulo=libro_in.titulo.strip(),
         isbn=libro_in.isbn.strip() if libro_in.isbn else None,
@@ -179,8 +178,6 @@ def crear_libro(libro_in: LibroCreate, db: Session = Depends(get_db)):
         saga_id=libro_in.saga_id,
         posicion_saga=libro_in.posicion_saga
     )
-
-    # Asignación de relaciones N:M
     nuevo_libro.autores = autores_encontrados
     nuevo_libro.generos = generos_encontrados
 
@@ -192,30 +189,91 @@ def crear_libro(libro_in: LibroCreate, db: Session = Depends(get_db)):
 
 @router.get("/libros", response_model=List[LibroResponse])
 def listar_libros(
+    buscar: Optional[str] = Query(None, description="Búsqueda libre en título, ISBN o nombre de autor"),
     titulo: Optional[str] = Query(None, description="Filtrar por coincidencia en el título"),
+    autor: Optional[str] = Query(None, description="Filtrar por nombre parcial del autor (ej: Marquez)"),
+    autor_id: Optional[int] = Query(None, description="Filtrar por ID exacto de autor"),
     isbn: Optional[str] = Query(None, description="Filtrar por ISBN exacto"),
-    autor_id: Optional[int] = Query(None, description="Filtrar libros por autor"),
-    genero_id: Optional[int] = Query(None, description="Filtrar libros por género"),
+    genero_id: Optional[int] = Query(None, description="Filtrar por ID de género"),
+    editorial_id: Optional[int] = Query(None, description="Filtrar por ID de editorial"),
+    saga_id: Optional[int] = Query(None, description="Filtrar por ID de saga"),
+    ordenar_por: Literal["titulo", "autor", "fecha_publicacion", "id"] = Query("titulo", description="Criterio de orden (Regla 6.8)"),
+    orden_dir: Literal["asc", "desc"] = Query("asc", description="Sentido del ordenamiento"),
+    limit: int = Query(50, ge=1, le=100, description="Cantidad máxima de resultados"),
+    offset: int = Query(0, ge=0, description="Desplazamiento para paginación"),
     db: Session = Depends(get_db)
 ):
-    query = db.query(Libro)
+    """
+    Lista y filtra libros del catálogo según las especificaciones de la Regla 6.8.
+    """
+    stmt = (
+        select(Libro)
+        .options(
+            selectinload(Libro.autores),
+            selectinload(Libro.generos),
+            joinedload(Libro.editorial),
+            joinedload(Libro.saga)
+        )
+    )
 
-    # Filtros según Regla de negocio 6.8
+    # 1. Búsqueda por texto libre unificado (título, ISBN o autor)
+    if buscar:
+        termino = f"%{buscar.strip()}%"
+        stmt = stmt.where(
+            or_(
+                Libro.titulo.ilike(termino),
+                Libro.isbn.ilike(termino),
+                Libro.autores.any(Autor.nombre.ilike(termino))
+            )
+        )
+
+    # 2. Filtros específicos
     if titulo:
-        query = query.filter(Libro.titulo.ilike(f"%{titulo}%"))
-    if isbn:
-        query = query.filter(Libro.isbn == isbn.strip())
+        stmt = stmt.where(Libro.titulo.ilike(f"%{titulo.strip()}%"))
+    if autor:
+        stmt = stmt.where(Libro.autores.any(Autor.nombre.ilike(f"%{autor.strip()}%")))
     if autor_id:
-        query = query.filter(Libro.autores.any(Autor.id == autor_id))
+        stmt = stmt.where(Libro.autores.any(Autor.id == autor_id))
+    if isbn:
+        stmt = stmt.where(Libro.isbn == isbn.strip())
     if genero_id:
-        query = query.filter(Libro.generos.any(Genero.id == genero_id))
+        stmt = stmt.where(Libro.generos.any(Genero.id == genero_id))
+    if editorial_id:
+        stmt = stmt.where(Libro.editorial_id == editorial_id)
+    if saga_id:
+        stmt = stmt.where(Libro.saga_id == saga_id)
 
-    return query.order_by(Libro.titulo.asc()).all()
+    # 3. Criterios de ordenamiento dinámico
+    if ordenar_por == "autor":
+        stmt = stmt.outerjoin(Libro.autores)
+        columna_orden = Autor.nombre
+    else:
+        columna_orden = getattr(Libro, ordenar_por)
+
+    if orden_dir == "desc":
+        stmt = stmt.order_by(columna_orden.desc())
+    else:
+        stmt = stmt.order_by(columna_orden.asc())
+
+    # 4. Paginación y ejecución desduplicada
+    stmt = stmt.limit(limit).offset(offset)
+    libros = db.execute(stmt).scalars().unique().all()
+    return libros
 
 
 @router.get("/libros/{libro_id}", response_model=LibroResponse)
 def obtener_libro(libro_id: int, db: Session = Depends(get_db)):
-    libro = db.query(Libro).filter(Libro.id == libro_id).first()
+    stmt = (
+        select(Libro)
+        .options(
+            selectinload(Libro.autores),
+            selectinload(Libro.generos),
+            joinedload(Libro.editorial),
+            joinedload(Libro.saga)
+        )
+        .where(Libro.id == libro_id)
+    )
+    libro = db.execute(stmt).scalar_one_or_none()
     if not libro:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
