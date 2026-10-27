@@ -10,8 +10,12 @@ from app.schemas.catalogo import (
     EditorialCreate, EditorialResponse,
     GeneroCreate, GeneroResponse,
     SagaCreate, SagaResponse,
-    LibroCreate, LibroResponse
+    LibroCreate, LibroResponse, LibroISBNResponse
 )
+from app.services.isbn_service import isbn_service
+from app.dependencies import get_current_user
+from app.models.usuario import Usuario
+
 
 router = APIRouter(prefix="/catalogo", tags=["Catálogo de Libros"])
 
@@ -280,3 +284,19 @@ def obtener_libro(libro_id: int, db: Session = Depends(get_db)):
             detail=f"El libro con ID {libro_id} no fue encontrado."
         )
     return libro
+
+# ============================================================
+# 5. GESTIÓN DE LIBROS POR ISBN
+# ============================================================
+@router.get(
+    "/isbn/{isbn}",
+    response_model=LibroISBNResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Consultar metadatos bibliográficos por ISBN",
+    description="Consulta un servicio externo (Google Books) para autocompletar metadatos de un libro. Si no existe o falla, devuelve códigos HTTP controlados para permitir la carga manual."
+)
+async def obtener_libro_por_isbn(
+    isbn: str,
+    current_user: Usuario = Depends(get_current_user)  
+) -> LibroISBNResponse:
+    return await isbn_service.consultar_por_isbn(isbn_raw=isbn)

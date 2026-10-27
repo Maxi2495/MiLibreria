@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, HttpUrl
 from typing import Optional, List
 from datetime import date
 from decimal import Decimal
@@ -107,3 +107,18 @@ class LibroResponse(LibroBase):
     generos: List[GeneroResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
+    
+# ============================================================
+# SCHEMAS DE ISBN
+# ============================================================
+class LibroISBNResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    isbn: str
+    titulo: str
+    autores: List[str] = []
+    editorial: Optional[str] = None
+    fecha_publicacion: Optional[str] = None
+    sinopsis: Optional[str] = None
+    generos: List[str] = []
+    portada_url: Optional[str] = None
