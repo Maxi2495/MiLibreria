@@ -7,6 +7,7 @@ from app.api.v1.catalogo import router as catalogo_router
 from app.api.v1.ejemplares import router as ejemplares_router
 from app.routers.auth import router as auth_router
 from app.api.v1.prestamos import router as prestamos_router
+from app.api.v1.lecturas import router as lecturas_router
 
 
 app = FastAPI(
@@ -38,6 +39,7 @@ app.include_router(espacios_router, prefix="/api/v1")
 app.include_router(catalogo_router, prefix="/api/v1")
 app.include_router(ejemplares_router, prefix="/api/v1")
 app.include_router(prestamos_router)
+app.include_router(lecturas_router)
 
 
 @app.get("/", tags=["General"])
