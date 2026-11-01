@@ -3,7 +3,7 @@ from datetime import date
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 
 class EstadoLecturaEnum(str, Enum):
@@ -63,3 +63,21 @@ class LecturaResponse(LecturaBase):
     ejemplar_id: int
 
     model_config = ConfigDict(from_attributes=True)
+
+    @computed_field
+    @property
+    def duracion_dias(self) -> Optional[int]:
+        if self.fecha_inicio is None or self.fecha_fin is None:
+            return None
+
+        return (self.fecha_fin - self.fecha_inicio).days
+
+
+class ResumenLecturasResponse(BaseModel):
+    ejemplar_id: int
+    total_lecturas: int
+    lecturas_finalizadas: int
+    calificaciones: list[int]
+    promedio_calificaciones: Optional[float] = None
+
+

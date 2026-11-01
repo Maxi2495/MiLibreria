@@ -6,7 +6,12 @@ from app.db.session import get_db
 from app.dependencies import get_current_user
 from app.models.usuario import Usuario
 from app.models.ejemplar import Ejemplar, Lectura
-from app.schemas.lectura import LecturaCreate, LecturaResponse, LecturaUpdate
+from app.schemas.lectura import (
+    LecturaCreate,
+    LecturaResponse,
+    LecturaUpdate,
+    ResumenLecturasResponse,
+)
 
 
 router = APIRouter(
@@ -242,3 +247,66 @@ def crear_lectura(
     db.refresh(nueva_lectura)
 
     return nueva_lectura
+
+
+@router.get(
+    "/ejemplar/{ejemplar_id}/resumen",
+    response_model=ResumenLecturasResponse,
+)
+def obtener_resumen_lecturas(
+    ejemplar_id: int,
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(get_current_user),
+):
+    # Verificar que el ejemplar pertenezca al usuario.
+    ejemplar = (
+        db.query(Ejemplar)
+        .filter(
+            Ejemplar.id == ejemplar_id,
+            Ejemplar.usuario_id == usuario_actual.id,
+            Ejemplar.activo.is_(True),
+        )
+        .first()
+    )
+
+    if ejemplar is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Ejemplar no encontrado",
+        )
+
+    # Obtener todas las lecturas del ejemplar.
+    lecturas = (
+        db.query(Lectura)
+        .filter(Lectura.ejemplar_id == ejemplar_id)
+        .order_by(Lectura.id)
+        .all()
+    )
+
+    # Contar las lecturas finalizadas.
+    finalizadas = [
+        lectura
+        for lectura in lecturas
+        if lectura.estado == "LEIDO"
+    ]
+
+    # Considerar únicamente las finalizadas con calificación.
+    calificaciones = [
+        lectura.calificacion
+        for lectura in finalizadas
+        if lectura.calificacion is not None
+    ]
+
+    promedio = (
+        round(sum(calificaciones) / len(calificaciones), 2)
+        if calificaciones
+        else None
+    )
+
+    return ResumenLecturasResponse(
+        ejemplar_id=ejemplar_id,
+        total_lecturas=len(lecturas),
+        lecturas_finalizadas=len(finalizadas),
+        calificaciones=calificaciones,
+        promedio_calificaciones=promedio,
+    )

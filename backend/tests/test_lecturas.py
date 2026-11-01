@@ -273,3 +273,185 @@ def test_no_consultar_lecturas_de_otro_usuario(cliente):
 
     # El ejemplar 1 pertenece al usuario 1.
     assert respuesta.status_code == 404
+
+
+def test_calcular_duracion_lectura(cliente):
+    # Finalizar una lectura con fechas de inicio y fin.
+    respuesta = cliente.put(
+        "/api/v1/lecturas/1",
+        json={
+            "estado": "LEIDO",
+            "fecha_inicio": "2026-10-20",
+            "fecha_fin": "2026-10-25",
+            "calificacion": 5,
+        },
+    )
+
+    assert respuesta.status_code == 200
+
+    lectura = respuesta.json()
+
+    # Verificar que la duración se calcule correctamente.
+    assert lectura["duracion_dias"] == 5
+
+    # Verificar que también aparezca al consultar el historial.
+    respuesta = cliente.get("/api/v1/lecturas/ejemplar/1")
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()[0]["duracion_dias"] == 5
+
+
+def test_duracion_sin_fecha_fin(cliente):
+    # Registrar una lectura en curso, sin fecha de finalización.
+    respuesta = cliente.put(
+        "/api/v1/lecturas/1",
+        json={
+            "estado": "EN_CURSO",
+            "fecha_inicio": "2026-10-21",
+        },
+    )
+
+    assert respuesta.status_code == 200
+
+    lectura = respuesta.json()
+
+    assert lectura["fecha_inicio"] == "2026-10-21"
+    assert lectura["fecha_fin"] is None
+    assert lectura["duracion_dias"] is None
+
+    # Comprobar el mismo resultado al consultar el historial.
+    respuesta = cliente.get("/api/v1/lecturas/ejemplar/1")
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()[0]["duracion_dias"] is None
+
+
+def test_promedio_calificaciones_relecturas(cliente):
+    # Finalizar la primera lectura con calificación 4.
+    respuesta = cliente.put(
+        "/api/v1/lecturas/1",
+        json={
+            "estado": "LEIDO",
+            "calificacion": 4,
+        },
+    )
+    assert respuesta.status_code == 200
+
+    # Crear una segunda lectura.
+    respuesta = cliente.post(
+        "/api/v1/lecturas/",
+        json={
+            "ejemplar_id": 1,
+            "estado": "EN_CURSO",
+        },
+    )
+    assert respuesta.status_code == 201
+
+    segunda_lectura_id = respuesta.json()["id"]
+
+    # Finalizar la segunda lectura con calificación 5.
+    respuesta = cliente.put(
+        f"/api/v1/lecturas/{segunda_lectura_id}",
+        json={
+            "estado": "LEIDO",
+            "calificacion": 5,
+        },
+    )
+    assert respuesta.status_code == 200
+
+    # Consultar el resumen.
+    respuesta = cliente.get(
+        "/api/v1/lecturas/ejemplar/1/resumen"
+    )
+
+    assert respuesta.status_code == 200
+
+    resumen = respuesta.json()
+
+    assert resumen["ejemplar_id"] == 1
+    assert resumen["total_lecturas"] == 2
+    assert resumen["lecturas_finalizadas"] == 2
+    assert resumen["calificaciones"] == [4, 5]
+    assert resumen["promedio_calificaciones"] == 4.5
+
+
+def test_lecturas_abandonadas_no_afectan_promedio(cliente):
+    # Finalizar la primera lectura con calificación 4.
+    respuesta = cliente.put(
+        "/api/v1/lecturas/1",
+        json={
+            "estado": "LEIDO",
+            "calificacion": 4,
+        },
+    )
+    assert respuesta.status_code == 200
+
+    # Crear una segunda lectura.
+    respuesta = cliente.post(
+        "/api/v1/lecturas/",
+        json={
+            "ejemplar_id": 1,
+            "estado": "EN_CURSO",
+        },
+    )
+    assert respuesta.status_code == 201
+
+    segunda_lectura_id = respuesta.json()["id"]
+
+    # Abandonar la segunda lectura y asignarle calificación 1.
+    respuesta = cliente.put(
+        f"/api/v1/lecturas/{segunda_lectura_id}",
+        json={
+            "estado": "ABANDONADO",
+            "calificacion": 1,
+        },
+    )
+    assert respuesta.status_code == 200
+
+    # Consultar el resumen.
+    respuesta = cliente.get(
+        "/api/v1/lecturas/ejemplar/1/resumen"
+    )
+    assert respuesta.status_code == 200
+
+    resumen = respuesta.json()
+
+    assert resumen["total_lecturas"] == 2
+    assert resumen["lecturas_finalizadas"] == 1
+    assert resumen["calificaciones"] == [4]
+    assert resumen["promedio_calificaciones"] == 4.0
+
+
+def test_resumen_sin_lecturas_finalizadas(cliente):
+    # El ejemplar de prueba tiene una lectura PENDIENTE.
+    respuesta = cliente.get(
+        "/api/v1/lecturas/ejemplar/1/resumen"
+    )
+
+    assert respuesta.status_code == 200
+
+    resumen = respuesta.json()
+
+    assert resumen["ejemplar_id"] == 1
+    assert resumen["total_lecturas"] == 1
+    assert resumen["lecturas_finalizadas"] == 0
+    assert resumen["calificaciones"] == []
+    assert resumen["promedio_calificaciones"] is None
+
+
+def test_no_consultar_resumen_de_otro_usuario(cliente):
+    from app.main import app
+    from app.dependencies import get_current_user
+
+    # Simular un usuario diferente del propietario.
+    class OtroUsuario:
+        id = 2
+
+    app.dependency_overrides[get_current_user] = lambda: OtroUsuario()
+
+    # El ejemplar 1 pertenece al usuario 1.
+    respuesta = cliente.get(
+        "/api/v1/lecturas/ejemplar/1/resumen"
+    )
+
+    assert respuesta.status_code == 404
