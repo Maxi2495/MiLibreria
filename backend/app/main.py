@@ -8,7 +8,7 @@ from app.api.v1.ejemplares import router as ejemplares_router
 from app.routers.auth import router as auth_router
 from app.api.v1.prestamos import router as prestamos_router
 from app.api.v1.lecturas import router as lecturas_router
-
+from app.api.v1.wishlist import router as wishlist_router
 
 app = FastAPI(
     title="BookNest API",
@@ -40,6 +40,7 @@ app.include_router(catalogo_router, prefix="/api/v1")
 app.include_router(ejemplares_router, prefix="/api/v1")
 app.include_router(prestamos_router)
 app.include_router(lecturas_router)
+app.include_router(wishlist_router)
 
 
 @app.get("/", tags=["General"])

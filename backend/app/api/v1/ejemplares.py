@@ -1,6 +1,6 @@
 from datetime import date
 from typing import List, Optional, Literal
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Body
 from sqlalchemy import select, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -63,7 +63,8 @@ def calcular_ocupacion_estante(estante_id: int, db: Session) -> int:
 def crear_ejemplar(
     ejemplar_in: EjemplarCreate,
     usuario_actual: Usuario = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    confirmar: bool = Depends(lambda: True),
 ):
     # A. Validar que el libro exista en el catálogo
     stmt_libro = select(Libro).where(Libro.id == ejemplar_in.libro_id)
@@ -120,8 +121,12 @@ def crear_ejemplar(
     )
     db.add(lectura_inicial)
 
-    db.commit()
-    db.refresh(nuevo_ejemplar)
+    if confirmar:
+        db.commit()
+        db.refresh(nuevo_ejemplar)
+    else:
+        db.flush()
+
     return nuevo_ejemplar
 
 
